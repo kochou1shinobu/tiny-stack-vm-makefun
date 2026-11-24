@@ -5,6 +5,24 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+// Opcode validity, decided once: an opcode is legal iff it is one of the
+// ISA's defined instructions (see the switch arms in run()).
+const VALID = new Array<boolean>(256).fill(false);
+for (const op of [
+  0, 1, 2, 3, 4, 5, 6, 7,
+  0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b,
+  0x1c, 0x1d, 0x1e, 0x20, 0x21, 0x22,
+  0x30, 0x31, 0x32, 0x33, 0x34, 0x40, 0x41, 0x50, 0x51, 0x52, 0x53,
+]) VALID[op] = true;
+
+// Immediate-operand length per opcode, also decided once: PUSH8 (1) takes
+// 1 byte, PUSH32 (2) takes 4, the branch/call family 0x30-0x33 takes 2,
+// everything else takes none.
+const IMM = new Array<number>(256).fill(0);
+IMM[1] = 1;
+IMM[2] = 4;
+IMM[0x30] = IMM[0x31] = IMM[0x32] = IMM[0x33] = 2;
+
 function run(p: Uint8Array, inp: Uint8Array): { out: Uint8Array; code: number } {
   const D = new Int32Array(256);
   const C = new Int32Array(64);
@@ -17,11 +35,8 @@ function run(p: Uint8Array, inp: Uint8Array): { out: Uint8Array; code: number } 
     if (steps === 1000000) return done(10);
     if (pc < 0 || pc >= n) return done(9);
     const op = p[pc];
-    const imm = op === 1 ? 1 : op === 2 ? 4 : op >= 0x30 && op <= 0x33 ? 2 : 0;
-    const valid =
-      op <= 7 || (op >= 0x10 && op <= 0x22 && op !== 0x1f) || (op >= 0x30 && op <= 0x34) ||
-      op === 0x40 || op === 0x41 || (op >= 0x50 && op <= 0x53);
-    if (!valid) return done(5);
+    const imm = IMM[op];
+    if (!VALID[op]) return done(5);
     if (imm && pc + imm >= n) return done(9);
     steps++;
     const next = pc + 1 + imm;
